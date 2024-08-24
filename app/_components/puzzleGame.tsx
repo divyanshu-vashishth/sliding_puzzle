@@ -5,6 +5,10 @@ import { moveTile, checkWin } from '@/lib/utils'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Toaster, toast } from 'sonner'
+import Image from 'next/image'
+
+
+
 
 const PuzzleGame: React.FC = () => {
   const [gameState, setGameState] = useState<(number | null)[]>([])
@@ -109,9 +113,9 @@ const PuzzleGame: React.FC = () => {
       setGameState(newState);
       const newMoves = moves + 1;
       setMoves(newMoves);
-      socket.send(JSON.stringify({ 
-        type: 'updateGame', 
-        state: newState, 
+      socket.send(JSON.stringify({
+        type: 'updateGame',
+        state: newState,
         moves: newMoves,
         visualHint: index
       }));
@@ -189,12 +193,12 @@ const PuzzleGame: React.FC = () => {
             value={nameInput}
             onChange={(e) => setNameInput(e.target.value)}
           />
-          <Button 
+          <Button
             onClick={() => {
               if (nameInput.trim()) {
                 setPlayerName(nameInput.trim())
               }
-            }} 
+            }}
             variant={'secondary'}
             className="w-full"
           >
@@ -219,8 +223,8 @@ const PuzzleGame: React.FC = () => {
                 value={roomNameInput}
                 onChange={(e) => setRoomNameInput(e.target.value)}
               />
-              <Button 
-                onClick={createGame} 
+              <Button
+                onClick={createGame}
                 className="w-full mb-4"
                 disabled={!roomNameInput.trim()}
                 variant={'secondary'}
@@ -234,7 +238,7 @@ const PuzzleGame: React.FC = () => {
                 value={joinRoomInput}
                 onChange={(e) => setJoinRoomInput(e.target.value)}
               />
-              <Button 
+              <Button
                 onClick={() => joinGame(joinRoomInput)}
                 className="w-full"
                 disabled={!joinRoomInput.trim()}
@@ -258,8 +262,8 @@ const PuzzleGame: React.FC = () => {
                 </Button>
               </div>
               {!isWaitingForOpponent && (
-                <Button 
-                  onClick={() => joinGame(roomId)} 
+                <Button
+                  onClick={() => joinGame(roomId)}
                   className="w-full"
                   variant={'secondary'}
                 >
@@ -282,14 +286,14 @@ const PuzzleGame: React.FC = () => {
       <h1 className="text-3xl font-bold mb-6 text-center">
         Sliding Puzzle Challenge
       </h1>
-      
+
       {imageUrl && (
         <div className="mb-8">
           <h3 className="text-xl font-semibold mb-2">Full Image Preview:</h3>
-          <img src={imageUrl} alt="Puzzle" className="w-64 h-64 object-cover rounded-lg shadow-md" />
+          <Image src={imageUrl} alt="Puzzle" className="object-cover rounded-lg shadow-md" width={256} height={256} />
         </div>
       )}
-      
+
       <div className='flex flex-col lg:flex-row justify-center items-start w-full gap-8'>
         <div className='flex-1 w-full max-w-md'>
           <h2 className="text-2xl font-semibold mb-4">Your Puzzle ({playerName})</h2>
@@ -302,14 +306,14 @@ const PuzzleGame: React.FC = () => {
           <p className='mt-4 text-lg'>Opponent's Moves: <span className="font-bold">{opponentMoves}</span></p>
         </div>
       </div>
-      
+
       {isWon && (
         <div className="mt-8 w-full max-w-2xl bg-green-500 p-4 rounded-lg text-center">
           <h3 className="text-2xl font-bold mb-2">
             {winner === playerName ? "You won!" : `${winner} won!`}
           </h3>
           <p className="text-xl">
-            {gameState === opponentState ? "It's a tie!" : `Congratulations to ${winner}!`}
+            {gameState === opponentState ? "It&apos;s a tie!" : `Congratulations to ${winner}!`}
           </p>
         </div>
       )}
