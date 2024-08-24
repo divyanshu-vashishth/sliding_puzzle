@@ -89,7 +89,6 @@ const PuzzleGame: React.FC = () => {
         case 'gameWon':
           setIsWon(true);
           setWinner(data.winner);
-          toast.success(`${data.playerName} won!`);
           break;
         case 'playerDisconnected':
           toast.error(`${data.playerName} has disconnected.`);
