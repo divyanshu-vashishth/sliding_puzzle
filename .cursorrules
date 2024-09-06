@@ -1,4 +1,0 @@
-
-
-- never do typescript interfaces, instead use types 
-- keep prop types for react components inline
