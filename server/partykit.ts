@@ -22,7 +22,12 @@ export default class PuzzleGame implements Party.Server {
   }
 
   async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
-    // Do nothing on connect, wait for specific actions
+  
+    // this.room.broadcast(JSON.stringify({
+    //   type: "playerConnected",
+    //   playerName: 
+    // }));
+    
   }
 
   async onMessage(message: string, sender: Party.Connection) {
@@ -53,6 +58,7 @@ export default class PuzzleGame implements Party.Server {
           },
           currentTurn: sender.id,
         }));
+      case "playerDisconnected":
         break;
     }
   }
@@ -144,7 +150,6 @@ export default class PuzzleGame implements Party.Server {
   }
 
   async fetchRandomImage(): Promise<string> {
-    // Implement your image fetching logic here
     try {
       const unsplash = createApi({
         accessKey: process.env.NEXT_PUBLIC_UNSPLASH_ACCESS_KEY!,

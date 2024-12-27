@@ -18,7 +18,17 @@ export function checkWin(state: PuzzleState): boolean {
     (index === state.length - 1 && tile === null) || tile === index + 1
   )
 }
-
+function isAdjacent(index1: number, index2: number, size: number): boolean {
+  const row1 = Math.floor(index1 / size)
+  const col1 = index1 % size
+  const row2 = Math.floor(index2 / size)
+  const col2 = index2 % size
+  
+  return (
+    (Math.abs(row1 - row2) === 1 && col1 === col2) ||
+    (Math.abs(col1 - col2) === 1 && row1 === row2)
+  )
+}
 export function moveTile(state: PuzzleState, index: number): PuzzleState {
   const newState = [...state]
   const emptyIndex = newState.indexOf(null)
@@ -40,17 +50,7 @@ function shuffleArray<T>(array: T[]): T[] {
   return shuffled
 }
 
-function isAdjacent(index1: number, index2: number, size: number): boolean {
-  const row1 = Math.floor(index1 / size)
-  const col1 = index1 % size
-  const row2 = Math.floor(index2 / size)
-  const col2 = index2 % size
-  
-  return (
-    (Math.abs(row1 - row2) === 1 && col1 === col2) ||
-    (Math.abs(col1 - col2) === 1 && row1 === row2)
-  )
-}
+
 
 export function isSolvable(puzzle: PuzzleState): boolean {
   let inversionCount = 0;
