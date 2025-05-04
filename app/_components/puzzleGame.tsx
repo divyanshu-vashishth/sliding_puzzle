@@ -1,4 +1,5 @@
 'use client'
+
 import React, { useState, useCallback, useEffect } from 'react'
 import usePartySocket from 'partysocket/react'
 import { moveTile, checkWin } from '@/lib/utils'
@@ -7,8 +8,30 @@ import { Input } from "@/components/ui/input"
 import { Toaster, toast } from 'sonner'
 import Image from 'next/image'
 
+declare global {
+  interface Window {
+    google: any;
+  }
+}
 
-
+const GOOGLE_PAY_TEST_ENV = {
+  apiVersion: 2,
+  apiVersionMinor: 0,
+  allowedPaymentMethods: [{
+    type: 'CARD',
+    parameters: {
+      allowedAuthMethods: ['PAN_ONLY', 'CRYPTOGRAM_3DS'],
+      allowedCardNetworks: ['MASTERCARD', 'VISA'],
+    },
+    tokenizationSpecification: {
+      type: 'PAYMENT_GATEWAY',
+      parameters: {
+        gateway: 'normal',
+        gatewayMerchantId: '6523-0563-3465',
+      },
+    },
+  }],
+};
 
 const PuzzleGame: React.FC = () => {
   const [gameState, setGameState] = useState<(number | null)[]>([])
@@ -30,6 +53,11 @@ const PuzzleGame: React.FC = () => {
   const [isWaitingForOpponent, setIsWaitingForOpponent] = useState(false)
   const [visualHint, setVisualHint] = useState<number | null>(null)
   const [winner, setWinner] = useState<string>('')
+  const [betAmount, setBetAmount] = useState<number>(0)
+  const [hasBetPlaced, setHasBetPlaced] = useState(false)
+  const [totalBetAmount, setTotalBetAmount] = useState(0)
+  const [googlePayClient, setGooglePayClient] = useState<any>(null)
+  const [isBettingLocked, setIsBettingLocked] = useState(false)
 
   const socket = usePartySocket({
     host: process.env.NEXT_PUBLIC_PARTYKIT_HOST!,
@@ -93,9 +121,46 @@ const PuzzleGame: React.FC = () => {
         case 'playerDisconnected':
           toast.error(`${data.playerName} has disconnected.`);
           break;
+        case 'betPlaced':
+          setTotalBetAmount(data.totalBetAmount);
+          break;
+        case 'betsLocked':
+          setIsBettingLocked(true);
+          toast.info('All bets are in! Game is locked.');
+          break;
+        case 'payoutComplete':
+          if (data.winner === playerName) {
+            toast.success(`Congratulations! You won $${data.amount.toFixed(2)}!`);
+          }
+          break;
+        case 'betError':
+          toast.error(data.message);
+          break;
       }
     },
   })
+
+  // Load Google Pay script
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = 'https://pay.google.com/gp/p/js/pay.js';
+    script.async = true;
+    document.body.appendChild(script);
+
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
+
+  // Initialize Google Pay client
+  useEffect(() => {
+    if (window.google && !googlePayClient) {
+      const client = new window.google.payments.api.PaymentsClient({
+        environment: 'TEST'
+      });
+      setGooglePayClient(client);
+    }
+  }, [googlePayClient]);
 
   useEffect(() => {
     return () => {
@@ -144,41 +209,41 @@ const PuzzleGame: React.FC = () => {
     toast.success('Room ID copied to clipboard')
   }
 
-  const renderPuzzleBoard = (state: (number | null)[], isOpponent: boolean, hintIndex: number | null) => {
-    if (!state || state.length === 0) {
-      return <div>Loading puzzle...</div>;
-    }
+  const handleGooglePay = async (amount: number) => {
+    if (!googlePayClient) return;
 
-    return (
-      <div className='grid grid-cols-3 gap-1 w-full aspect-square bg-black p-1 rounded-lg'>
-        {state.map((tile, index) => (
-          <div
-            key={index}
-            className={`w-full h-full ${tile === null ? 'bg-gray-800' : ''} 
-                      ${index === hintIndex ? 'ring-2 ring-blue-500' : ''}
-                      relative overflow-hidden transition-all duration-300 ease-in-out
-                      ${!isOpponent && 'hover:brightness-110 cursor-pointer'}`}
-            onClick={() => !isOpponent && handleTileClick(index)}
-          >
-            {tile !== null && imageUrl && (
-              <div
-                className='absolute inset-0 bg-cover bg-center'
-                style={{
-                  backgroundImage: `url(${imageUrl})`,
-                  backgroundSize: '300%',
-                  backgroundPosition: `${((tile - 1) % 3) * 50}% ${Math.floor((tile - 1) / 3) * 50}%`
-                }}
-              >
-                <span className="absolute top-1 left-1 bg-black bg-opacity-50 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold text-white">
-                  {tile}
-                </span>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    )
-  }
+    const paymentDataRequest = {
+      ...GOOGLE_PAY_TEST_ENV,
+      merchantInfo: {
+        merchantId: 'TEST_MERCHANT_ID',
+        merchantName: 'Puzzle Challenge'
+      },
+      transactionInfo: {
+        totalPriceStatus: 'FINAL',
+        totalPrice: amount.toString(),
+        currencyCode: 'USD',
+      },
+    };
+
+    try {
+      const paymentData = await googlePayClient.loadPaymentData(paymentDataRequest);
+      // In production, you would process this payment with your backend
+      const transactionId = `test_${Date.now()}`;
+      
+      socket.send(JSON.stringify({
+        type: 'placeBet',
+        betAmount: amount,
+        transactionId
+      }));
+
+      setHasBetPlaced(true);
+      setBetAmount(amount);
+      toast.success('Bet placed successfully!');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to process payment');
+    }
+  };
 
   if (!playerName) {
     return (
@@ -278,6 +343,79 @@ const PuzzleGame: React.FC = () => {
       </div>
     )
   }
+  const renderPuzzleBoard = (state: (number | null)[], isOpponent: boolean, hintIndex: number | null) => {
+    if (!state || state.length === 0) {
+      return <div>Loading puzzle...</div>;
+    }
+
+    return (
+      <div className='grid grid-cols-3 gap-1 w-full aspect-square bg-black p-1 rounded-lg'>
+        {state.map((tile, index) => (
+          <div
+            key={index}
+            className={`w-full h-full ${tile === null ? 'bg-gray-800' : ''} 
+                      ${index === hintIndex ? 'ring-2 ring-blue-500' : ''}
+                      relative overflow-hidden transition-all duration-300 ease-in-out
+                      ${!isOpponent && 'hover:brightness-110 cursor-pointer'}`}
+            onClick={() => !isOpponent && handleTileClick(index)}
+          >
+            {tile !== null && imageUrl && (
+              <div
+                className='absolute inset-0 bg-cover bg-center'
+                style={{
+                  backgroundImage: `url(${imageUrl})`,
+                  backgroundSize: '300%',
+                  backgroundPosition: `${((tile - 1) % 3) * 50}% ${Math.floor((tile - 1) / 3) * 50}%`
+                }}
+              >
+                <span className="absolute top-1 left-1 bg-black bg-opacity-50 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold text-white">
+                  {tile}
+                </span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    )
+  }
+  const renderBettingSection = () => {
+    if (!isGameStarted || isWon) return null;
+
+    return (
+      <div className="mt-8 w-full max-w-2xl bg-gray-700 p-4 rounded-lg">
+        <h3 className="text-xl font-bold mb-4">Place Your Bet</h3>
+        {!hasBetPlaced ? (
+          <div className="flex gap-4">
+            <Input
+              type="number"
+              min="1"
+              step="1"
+              value={betAmount}
+              onChange={(e) => setBetAmount(Number(e.target.value))}
+              placeholder="Enter bet amount"
+              className="flex-1"
+              disabled={isBettingLocked}
+            />
+            <Button
+              onClick={() => handleGooglePay(betAmount)}
+              disabled={betAmount <= 0 || isBettingLocked}
+              variant="secondary"
+            >
+              Place Bet with Google Pay
+            </Button>
+          </div>
+        ) : (
+          <div className="text-center">
+            <p>Your bet: ${betAmount}</p>
+            <p>Total pot: ${totalBetAmount}</p>
+            {isBettingLocked && (
+              <p className="text-green-400">Betting locked - Game in progress!</p>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className='flex bg-gray-800/60 flex-col items-center justify-center p-8 text-white'>
@@ -300,11 +438,13 @@ const PuzzleGame: React.FC = () => {
           <p className='mt-4 text-lg'>Your Moves: <span className="font-bold">{moves}</span></p>
         </div>
         <div className='flex-1 w-full max-w-md'>
-          <h2 className="text-2xl font-semibold mb-4">Opponent's Puzzle ({opponentName})</h2>
+          <h2 className="text-2xl font-semibold mb-4">Opponent&apos;s Puzzle ({opponentName})</h2>
           {renderPuzzleBoard(opponentState, true, visualHint)}
-          <p className='mt-4 text-lg'>Opponent's Moves: <span className="font-bold">{opponentMoves}</span></p>
+          <p className='mt-4 text-lg'>Opponent&apos;s Moves: <span className="font-bold">{opponentMoves}</span></p>
         </div>
       </div>
+
+      {renderBettingSection()}
 
       {isWon && (
         <div className="mt-8 w-full max-w-2xl bg-green-500 p-4 rounded-lg text-center">
@@ -312,7 +452,9 @@ const PuzzleGame: React.FC = () => {
             {winner === playerName ? "You won!" : `${winner} won!`}
           </h3>
           <p className="text-xl">
-            {gameState === opponentState ? "It&apos;s a tie!" : `Congratulations to ${winner}!`}
+            {winner === playerName 
+              ? `Congratulations! You won ${(totalBetAmount * 0.9).toFixed(2)} USD!`
+              : `${winner} won ${(totalBetAmount * 0.9).toFixed(2)} USD!`}
           </p>
         </div>
       )}

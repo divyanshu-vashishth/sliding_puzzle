@@ -2,13 +2,26 @@ import type * as Party from "partykit/server";
 import { createPuzzle, checkWin, isSolvable } from "../lib/utils";
 import { createApi } from 'unsplash-js';
 
+interface BetInfo {
+  amount: number;
+  transactionId: string;
+  isPaid: boolean;
+}
+
 export default class PuzzleGame implements Party.Server {
   gameState: {
     imageUrl: string;
     initialState: (number | null)[];
-    players: Record<string, { state: (number | null)[]; moves: number; name: string }>;
+    players: Record<string, { 
+      state: (number | null)[]; 
+      moves: number; 
+      name: string;
+      bet?: BetInfo;
+    }>;
     isGameStarted: boolean;
     winner: string | null;
+    totalBetAmount: number;
+    areBetsLocked: boolean;
   };
 
   constructor(readonly room: Party.Room) {
@@ -18,16 +31,13 @@ export default class PuzzleGame implements Party.Server {
       players: {},
       isGameStarted: false,
       winner: null,
+      totalBetAmount: 0,
+      areBetsLocked: false
     };
   }
 
-  async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
-  
-    // this.room.broadcast(JSON.stringify({
-    //   type: "playerConnected",
-    //   playerName: 
-    // }));
-    
+  async onConnect(conn: Party.Connection) {
+    console.log("New connection:", conn.id);   
   }
 
   async onMessage(message: string, sender: Party.Connection) {
@@ -38,6 +48,18 @@ export default class PuzzleGame implements Party.Server {
       case "createGame":
         await this.createGame(sender, data.playerName, data.roomId);
         break;
+
+      case "gameStart":
+          this.gameState.isGameStarted = true;
+          this.room.broadcast(JSON.stringify({
+            type: "gameStart",
+            players: {
+              [sender.id]: { name: data.playerName, state: this.gameState.initialState },
+              [Object.keys(this.gameState.players)[0]]: { name: this.gameState.players[Object.keys(this.gameState.players)[0]].name, state: this.gameState.initialState },
+            },
+            currentTurn: sender.id,
+          }));
+        break;
       case "joinGame":
         await this.joinGame(sender, data.playerName, data.roomId);
         break;
@@ -46,19 +68,16 @@ export default class PuzzleGame implements Party.Server {
         break;
       case "gameWon":
         this.gameState.winner = data.winner;
-        this.room.broadcast(JSON.stringify({ type: "gameWon", winner: data.winner }));
-        break;
-      case "gameStart":
-        this.gameState.isGameStarted = true;
-        this.room.broadcast(JSON.stringify({
-          type: "gameStart",
-          players: {
-            [sender.id]: { name: data.playerName, state: this.gameState.initialState },
-            [Object.keys(this.gameState.players)[0]]: { name: this.gameState.players[Object.keys(this.gameState.players)[0]].name, state: this.gameState.initialState },
-          },
-          currentTurn: sender.id,
+        await this.handleWinnerPayout(data.winner);
+        this.room.broadcast(JSON.stringify({ 
+          type: "gameWon", 
+          winner: data.winner 
         }));
+        break;
       case "playerDisconnected":
+        break;
+      case "placeBet":
+        await this.placeBet(sender, data.betAmount, data.transactionId);
         break;
     }
   }
@@ -179,6 +198,58 @@ export default class PuzzleGame implements Party.Server {
       this.room.broadcast(JSON.stringify({
         type: "playerDisconnected",
         playerName: disconnectedPlayer.name
+      }));
+    }
+  }
+
+  async placeBet(sender: Party.Connection, betAmount: number, transactionId: string) {
+    if (this.gameState.areBetsLocked) {
+      sender.send(JSON.stringify({ 
+        type: "betError", 
+        message: "Betting is locked for this game" 
+      }));
+      return;
+    }
+
+    this.gameState.players[sender.id].bet = {
+      amount: betAmount,
+      transactionId,
+      isPaid: true
+    };
+
+    this.gameState.totalBetAmount += betAmount;
+
+    // Check if both players have placed their bets
+    const players = Object.values(this.gameState.players);
+    if (players.length === 2 && players.every(p => p.bet?.isPaid)) {
+      this.gameState.areBetsLocked = true;
+      this.room.broadcast(JSON.stringify({
+        type: "betsLocked",
+        totalBetAmount: this.gameState.totalBetAmount
+      }));
+    }
+
+    this.room.broadcast(JSON.stringify({
+      type: "betPlaced",
+      playerId: sender.id,
+      betAmount,
+      totalBetAmount: this.gameState.totalBetAmount
+    }));
+  }
+
+  async handleWinnerPayout(winnerName: string) {
+    const totalBetAmount = this.gameState.totalBetAmount;
+    const winnerShare = totalBetAmount * 0.9; // Winner gets 90% of total bet
+
+    const winner = Object.entries(this.gameState.players).find(
+      ([_, player]) => player.name === winnerName
+    );
+
+    if (winner) {
+      this.room.broadcast(JSON.stringify({
+        type: "payoutComplete",
+        winner: winnerName,
+        amount: winnerShare
       }));
     }
   }
